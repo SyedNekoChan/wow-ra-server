@@ -1,0 +1,5 @@
+# One module per line:  folder-name  git-url
+# To skip a module, put a # in front of its line.
+# Never add "-master" to a folder name (it breaks the build).
+mod-anticheat https://github.com/azerothcore/mod-anticheat.git
+mod-transmog https://github.com/azerothcore/mod-transmog.git

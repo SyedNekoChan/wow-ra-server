@@ -1,0 +1,7 @@
+# The AzerothCore download is big and can be re-created. Never commit it.
+azerothcore-wotlk/
+
+# Secrets. Never commit these.
+.env
+*.token
+secrets/

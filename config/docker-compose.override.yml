@@ -1,0 +1,13 @@
+# Copied into azerothcore-wotlk/ by scripts/setup.sh.
+# Edit THIS copy (in config/), not the one inside azerothcore-wotlk/.
+services:
+  ac-worldserver:
+    environment:
+      # Placeholders for our RetroAchievements module (used later).
+      # Naming rule: RA.DryRun becomes AC_RA_DRY_RUN
+      AC_RA_ENABLED: "0"
+      AC_RA_DRY_RUN: "1"
+      # Secrets come from the computer's environment (Codespaces secrets).
+      # Never type a real password or token in this file.
+      RA_INTEGRATION_USER: "${RA_INTEGRATION_USER:-}"
+      RA_CONNECT_TOKEN: "${RA_CONNECT_TOKEN:-}"
