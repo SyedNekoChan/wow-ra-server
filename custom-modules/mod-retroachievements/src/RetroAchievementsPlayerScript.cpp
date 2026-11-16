@@ -1,3 +1,4 @@
+#include "AchievementMgr.h"
 #include "Chat.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
@@ -102,6 +103,13 @@ namespace
         CharacterDatabase.Execute("REPLACE INTO mod_ra_character_unlock (guid, achievement_id) VALUES ({}, {})", guid, a.id);
         ChatHandler(player->GetSession()).SendSysMessage("Achievement unlocked: " + a.name + " - " + a.description);
         LOG_INFO("module.retroachievements", "mod-retroachievements: player {} unlocked achievement {} ({})", player->GetName(), a.id, a.name);
+
+        // Native grant: the game's own pop-up and Achievements window.
+        // Does nothing if the character is in GM mode or already has it.
+        if (AchievementEntry const* entry = sAchievementMgr->GetAchievement(a.id))
+            player->CompletedAchievement(entry);
+        else
+            LOG_WARN("module.retroachievements", "mod-retroachievements: achievement {} is not in the server Achievement data, native grant skipped", a.id);
     }
 
     void Evaluate(Player* player, uint8 type, uint32 key, uint32 amount)
