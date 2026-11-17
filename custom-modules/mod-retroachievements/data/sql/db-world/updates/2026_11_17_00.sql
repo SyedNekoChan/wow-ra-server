@@ -1,0 +1,1 @@
+REPLACE INTO achievement_dbc (ID, Faction, Instance_Id, Supercedes, Title_Lang_enUS, Title_Lang_Mask, Description_Lang_enUS, Description_Lang_Mask, Category, Points, Ui_Order, Flags, IconID, Reward_Lang_Mask, Minimum_Criteria, Shares_Criteria) VALUES (90002, -1, -1, 0, 'Wolf Hunter', 16712190, 'Kill 3 Diseased Young Wolves', 16712190, 90000, 5, 2, 0, 3268, 16712174, 0, 0);

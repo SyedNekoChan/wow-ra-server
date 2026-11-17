@@ -99,17 +99,39 @@ namespace
     void Award(Player* player, RaPlayerData& data, RaAchievement const& a)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        AchievementEntry const* entry = sAchievementMgr->GetAchievement(a.id);
+        bool announce = true;
+
+        if (!entry)
+        {
+            // No native entry yet: local-only unlock (old behaviour).
+            LOG_WARN("module.retroachievements", "mod-retroachievements: achievement {} is not in the server Achievement data, recorded locally only", a.id);
+        }
+        else if (player->HasAchieved(a.id))
+        {
+            // The game already has it (for example given with .achievement add): sync our table quietly.
+            announce = false;
+            LOG_INFO("module.retroachievements", "mod-retroachievements: player {} already has achievement {} natively, local unlock synced", player->GetName(), a.id);
+        }
+        else
+        {
+            // Native grant: the game's own pop-up and Achievements window.
+            player->CompletedAchievement(entry);
+            if (!player->HasAchieved(a.id))
+            {
+                // Blocked (GM mode, no permission, or a hook): do NOT record a local unlock.
+                LOG_INFO("module.retroachievements", "mod-retroachievements: native grant of achievement {} did not happen for player {} (GM mode or blocked), local unlock not recorded", a.id, player->GetName());
+                return;
+            }
+        }
+
         data.unlocked.insert(a.id);
         CharacterDatabase.Execute("REPLACE INTO mod_ra_character_unlock (guid, achievement_id) VALUES ({}, {})", guid, a.id);
-        ChatHandler(player->GetSession()).SendSysMessage("Achievement unlocked: " + a.name + " - " + a.description);
-        LOG_INFO("module.retroachievements", "mod-retroachievements: player {} unlocked achievement {} ({})", player->GetName(), a.id, a.name);
-
-        // Native grant: the game's own pop-up and Achievements window.
-        // Does nothing if the character is in GM mode or already has it.
-        if (AchievementEntry const* entry = sAchievementMgr->GetAchievement(a.id))
-            player->CompletedAchievement(entry);
-        else
-            LOG_WARN("module.retroachievements", "mod-retroachievements: achievement {} is not in the server Achievement data, native grant skipped", a.id);
+        if (announce)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("Achievement unlocked: " + a.name + " - " + a.description);
+            LOG_INFO("module.retroachievements", "mod-retroachievements: player {} unlocked achievement {} ({})", player->GetName(), a.id, a.name);
+        }
     }
 
     void Evaluate(Player* player, uint8 type, uint32 key, uint32 amount)
