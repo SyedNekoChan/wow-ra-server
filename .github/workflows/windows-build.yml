@@ -1,0 +1,199 @@
+name: windows-build
+
+# Builds the Windows server programs (authserver.exe, worldserver.exe) with our module.
+# Start it by hand:  gh workflow run windows-build.yml
+# The Boost and MySQL setup is adapted from AzerothCore's own windows_build.yml.
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      BOOST_ROOT: C:\local\boost_1_87_0
+      # Exact versions that run in our tested Codespace:
+      AC_COMMIT: 0ebbf6f89986b22dc6255c49e1633a718c7199a0
+      ANTICHEAT_COMMIT: 41e983a4ae559c03512b1d65dbd814635cdc2d30
+      TRANSMOG_COMMIT: d309745c9151ff2ea4202204c1efa991848414bf
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Boost & MySQL
+        uses: actions/cache@v6
+        with:
+          path: |
+            C:\local\boost_1_87_0
+            C:\tools\mysql\current
+          key: winbuild-deps:boost-1.87.0:mysql-8.4.9
+
+      - name: Configure OS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # --- Boost 1.87.0 (msvc-14.3, 64-bit) prebuilt binaries -> C:\local\boost_1_87_0 ---
+          if (-not (Test-Path 'C:\local\boost_1_87_0\boost'))
+          {
+            $boostExe = Join-Path $env:RUNNER_TEMP 'boost.exe'
+            $boostUrl = 'https://downloads.sourceforge.net/project/boost/boost-binaries/' +
+                        '1.87.0/boost_1_87_0-msvc-14.3-64.exe'
+            $boostRequest = @{
+              Uri = $boostUrl
+              OutFile = $boostExe
+              UserAgent = 'azerothcore-ci'
+              ConnectionTimeoutSeconds = 60
+              OperationTimeoutSeconds = 60
+            }
+            $boostAttempts = 3
+            for ($attempt = 1; $attempt -le $boostAttempts; $attempt++)
+            {
+              try
+              {
+                Invoke-WebRequest @boostRequest
+                $boostMB = (Get-Item $boostExe).Length / 1MB
+                if ($boostMB -lt 50) { throw "got $([int]$boostMB) MB, likely an HTML page." }
+                break
+              }
+              catch
+              {
+                Write-Host "Boost download attempt $attempt failed: $($_.Exception.Message)"
+                if ($attempt -eq $boostAttempts) { throw }
+                Start-Sleep -Seconds 15
+              }
+            }
+            Write-Host ("Downloaded Boost installer: {0:N1} MB" -f $boostMB)
+            $boostProc = Start-Process -FilePath $boostExe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\local\boost_1_87_0' -Wait -PassThru
+            if ($boostProc.ExitCode -ne 0) { throw "Boost installer failed with exit code $($boostProc.ExitCode)." }
+            if (-not (Test-Path 'C:\local\boost_1_87_0\boost\version.hpp')) { throw 'Boost install missing headers.' }
+            if (-not (Test-Path 'C:\local\boost_1_87_0\lib64-msvc-14.3')) { throw 'Boost install missing prebuilt libs.' }
+          }
+
+          # --- MySQL 8.4 client headers + libs -> C:\tools\mysql\current ---
+          if (-not (Test-Path 'C:\tools\mysql\current\lib\mysqlclient.lib'))
+          {
+            $mysqlZip = Join-Path $env:RUNNER_TEMP 'mysql.zip'
+            Invoke-WebRequest -Uri 'https://cdn.mysql.com/archives/mysql-8.4/mysql-8.4.9-winx64.zip' -OutFile $mysqlZip -UserAgent 'Mozilla/5.0'
+            $mysqlMB = (Get-Item $mysqlZip).Length / 1MB
+            Write-Host ("Downloaded MySQL zip: {0:N1} MB" -f $mysqlMB)
+            if ($mysqlMB -lt 50) { throw "MySQL zip download looks wrong ($([int]$mysqlMB) MB)." }
+            New-Item -ItemType Directory -Force -Path 'C:\tools\mysql' | Out-Null
+            Expand-Archive -Path $mysqlZip -DestinationPath 'C:\tools\mysql' -Force
+            if (Test-Path 'C:\tools\mysql\current') { Remove-Item -Recurse -Force 'C:\tools\mysql\current' }
+            Rename-Item 'C:\tools\mysql\mysql-8.4.9-winx64' 'C:\tools\mysql\current'
+            if (-not (Test-Path 'C:\tools\mysql\current\lib\mysqlclient.lib')) { throw 'MySQL client import library missing.' }
+          }
+
+          # --- OpenSSL: use the copy already installed on the runner image ---
+          $opensslRoot = @($env:OPENSSL_ROOT_DIR, 'C:\Program Files\OpenSSL', 'C:\Program Files\OpenSSL-Win64') |
+            Where-Object { $_ -and (Test-Path (Join-Path $_ 'include\openssl\opensslv.h')) } |
+            Select-Object -First 1
+          if (-not $opensslRoot) { throw 'No OpenSSL development install found on the runner image.' }
+          "OPENSSL_ROOT_DIR=$opensslRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using OpenSSL at $opensslRoot"
+
+      - name: Get sources (pinned versions)
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetch() {   # usage: fetch URL COMMIT DIR
+            mkdir -p "$3"
+            git -C "$3" init -q
+            git -C "$3" remote add origin "$1"
+            git -C "$3" fetch -q --depth 1 origin "$2"
+            git -C "$3" checkout -q FETCH_HEAD
+          }
+          fetch https://github.com/azerothcore/azerothcore-wotlk.git "$AC_COMMIT" ac
+          fetch https://github.com/azerothcore/mod-anticheat.git "$ANTICHEAT_COMMIT" ac/modules/mod-anticheat
+          fetch https://github.com/azerothcore/mod-transmog.git "$TRANSMOG_COMMIT" ac/modules/mod-transmog
+          cp -r custom-modules/mod-retroachievements ac/modules/mod-retroachievements
+          ls ac/modules
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIST="${GITHUB_WORKSPACE//\\//}/dist"
+          cmake -S ac -B build \
+            -DCMAKE_INSTALL_PREFIX="$DIST" \
+            -DAPPS_BUILD=all -DTOOLS_BUILD=none \
+            -DSCRIPTS=static -DMODULES=static \
+            -DBUILD_TESTING=OFF -DUSE_SCRIPTPCH=ON -DUSE_COREPCH=ON \
+            -DMYSQL_INCLUDE_DIR=C:/tools/mysql/current/include \
+            -DMYSQL_LIBRARY=C:/tools/mysql/current/lib/mysqlclient.lib
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config Release -j 4
+
+      - name: Install
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --install build --config Release
+
+      - name: Collect runtime files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          Write-Host 'Installed files:'
+          Get-ChildItem $dist -Recurse -Depth 1 | Select-Object -ExpandProperty FullName
+          foreach ($exe in 'worldserver.exe','authserver.exe') {
+            if (-not (Test-Path (Join-Path $dist $exe))) { throw "$exe not found in $dist (see the list above)" }
+          }
+
+          # DLLs the wiki says are needed next to the programs.
+          $ssl = Join-Path $env:OPENSSL_ROOT_DIR 'bin'
+          $required = @(
+            @{ Name = 'libmysql.dll';        Dir = 'C:\tools\mysql\current\lib' },
+            @{ Name = 'legacy.dll';          Dir = $ssl },
+            @{ Name = 'libcrypto-3-x64.dll'; Dir = $ssl },
+            @{ Name = 'libssl-3-x64.dll';    Dir = $ssl }
+          )
+          foreach ($f in $required) {
+            $src = Join-Path $f.Dir $f.Name
+            if (-not (Test-Path $src)) {
+              Write-Host "Missing: $src. Files in that folder:"
+              Get-ChildItem $f.Dir | Select-Object -First 60 -ExpandProperty Name
+              throw "Required DLL not found: $src"
+            }
+            Copy-Item $src $dist
+          }
+
+          # Visual C++ runtime DLLs, copied next to the programs so a clean PC needs no installer (unverified idea).
+          $sys = Join-Path $env:WINDIR 'System32'
+          foreach ($n in 'vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll','msvcp140_1.dll','msvcp140_2.dll','concrt140.dll') {
+            $src = Join-Path $sys $n
+            if (Test-Path $src) { Copy-Item $src $dist; Write-Host "Copied $n" } else { Write-Host "Not found (skipped): $n" }
+          }
+
+          # SQL files in their folder layout, for the first-run database setup (how the updater finds them is still to be checked).
+          $srcSql = Join-Path $dist 'sql-source'
+          New-Item -ItemType Directory -Force -Path (Join-Path $srcSql 'data') | Out-Null
+          Copy-Item 'ac\data\sql' (Join-Path $srcSql 'data\sql') -Recurse
+          Get-ChildItem 'ac\modules' -Directory | ForEach-Object {
+            $m = Join-Path $_.FullName 'data\sql'
+            if (Test-Path $m) {
+              $t = Join-Path $srcSql ('modules\' + $_.Name + '\data')
+              New-Item -ItemType Directory -Force -Path $t | Out-Null
+              Copy-Item $m (Join-Path $t 'sql') -Recurse
+            }
+          }
+
+          @(
+            "Built from commit $env:GITHUB_SHA of our repo",
+            "azerothcore-wotlk $env:AC_COMMIT",
+            "mod-anticheat $env:ANTICHEAT_COMMIT",
+            "mod-transmog $env:TRANSMOG_COMMIT"
+          ) | Set-Content (Join-Path $dist 'BUILD_INFO.txt')
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: wow-ra-server-windows
+          path: dist
+          retention-days: 14
