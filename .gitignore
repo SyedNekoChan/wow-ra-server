@@ -5,3 +5,6 @@ azerothcore-wotlk/
 .env
 *.token
 secrets/
+*.mpq
+*.MPQ
+*.dbc
