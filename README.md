@@ -1,7 +1,7 @@
 # WoW WotLK + RetroAchievements server
 
 AzerothCore (WotLK 3.3.5a) with community modules and our own
-RetroAchievements module. Free to play, no donations.
+RetroAchievements module.
 
 ## Folders
 - modules.list      community modules to include (one per line)
