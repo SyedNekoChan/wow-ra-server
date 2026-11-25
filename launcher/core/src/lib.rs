@@ -12,7 +12,6 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub use accounts::{Character, LoginResult};
 pub use settings::Settings;
 
 pub const LAUNCHER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -47,7 +46,6 @@ pub struct Status {
     pub server_dir: String,
     pub setup_done: bool,
     pub installed_version: Option<String>,
-    pub autologin: bool,
     pub mysql_running: bool,
     pub server_running: bool,
     pub launcher_version: String,
@@ -74,7 +72,6 @@ pub fn status() -> Status {
         server_dir: r.display().to_string(),
         setup_done: setup::is_setup_done(&r),
         installed_version: setup::installed_version(&r),
-        autologin: s.autologin,
         mysql_running: util::port_open(3306),
         server_running: util::is_running("worldserver.exe"),
         launcher_version: LAUNCHER_VERSION.into(),
@@ -96,12 +93,6 @@ pub fn set_server_folder(path: &str) -> Result<(), String> {
     }
     let mut s = Settings::load();
     s.server_dir = Some(p.display().to_string());
-    s.save()
-}
-
-pub fn set_autologin(on: bool) -> Result<(), String> {
-    let mut s = Settings::load();
-    s.autologin = on;
     s.save()
 }
 
@@ -150,18 +141,6 @@ pub fn apply_update(emit: Emit) -> Result<(), String> {
     Ok(())
 }
 
-pub fn login(user: &str, pass: &str) -> Result<LoginResult, String> {
-    let r = root();
-    server::ensure_mysql(&r)?;
-    accounts::login(&r, user, pass)
-}
-
-pub fn characters(user: &str) -> Result<Vec<Character>, String> {
-    let r = root();
-    server::ensure_mysql(&r)?;
-    accounts::characters(&r, &user.to_ascii_uppercase())
-}
-
 pub fn create_account(user: &str, pass: &str, gm: bool) -> Result<(), String> {
     let r = root();
     server::ensure_mysql(&r)?;
@@ -174,8 +153,8 @@ pub fn delete_account(user: &str, pass: &str) -> Result<(), String> {
     accounts::delete_account(&r, user, pass)
 }
 
-/// Start the realm, open the game, wait until it closes, stop the realm. Reports each phase.
-pub fn play(user: &str, pass: &str, ev: &dyn Fn(PlayEvent)) -> Result<(), String> {
+/// Start the realm, open the game, wait until it closes, stop the realm. Reports each phase. The player logs in inside the game.
+pub fn play(ev: &dyn Fn(PlayEvent)) -> Result<(), String> {
     let s = Settings::load();
     let r = s.server_root();
     let client = PathBuf::from(s.client_dir.clone().ok_or("Choose your game folder first.")?);
@@ -183,15 +162,12 @@ pub fn play(user: &str, pass: &str, ev: &dyn Fn(PlayEvent)) -> Result<(), String
     if util::is_running("Wow.exe") {
         return Err("The game is already running. Close it first.".into());
     }
-    // the same password check the login server will do
-    server::ensure_mysql(&r)?;
-    accounts::login(&r, user, pass)?;
     say("starting", "Updating your game files ...");
     game::install_patch(&r, &client)?;
     say("starting", "Starting the realm ...");
-    server::start_realm(&r, &|m| say("starting", m))?;
+    server::start_realm(&r, &|m| say("starting", m), true)?;
     say("ready", "The realm is online. Opening the game ...");
-    let mut child = game::launch_game(&client, user, pass, s.autologin, s.autologin_delay)?;
+    let mut child = game::launch_game(&client)?;
     say("ingame", "In game. Closing the game stops the realm.");
     let _ = child.wait();
     say("stopping", "The game closed. Saving and stopping the realm ...");

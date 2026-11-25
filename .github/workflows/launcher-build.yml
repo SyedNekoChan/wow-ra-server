@@ -1,16 +1,12 @@
 name: launcher-build
 
-# Builds the Windows launcher (Tauri) and puts launcher.exe on a GitHub Release.
-# Start it by hand: Actions tab, "launcher-build", Run workflow (or: gh.exe workflow run launcher-build.yml -R SyedNekoChan/wow-ra-server).
+# Builds the Windows launcher (Tauri) and keeps the exe as a workflow artifact called RA-Realm-Launcher.
+# Release.bat on the PC starts this, waits for it and puts the exe into the release. You do not run it by hand.
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag for the launcher"
-        default: "launcher-v0.1.0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -38,22 +34,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
           Copy-Item launcher/src-tauri/target/release/ra-realm-launcher.exe out/RA-Realm-Launcher.exe
-          (Get-FileHash out/RA-Realm-Launcher.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii out/RA-Realm-Launcher.exe.sha256
           Get-ChildItem out
 
       - uses: actions/upload-artifact@v4
         with:
           name: RA-Realm-Launcher
-          path: out/*
-
-      - name: Publish a GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "${{ inputs.tag }}"
-          gh release view $tag -R ${{ github.repository }} 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag -R ${{ github.repository }} --title "RA Realm Launcher $tag" --notes "Windows launcher (Tauri). Download RA-Realm-Launcher.exe, run it, point it at your 3.3.5a game folder, press Install."
-          }
-          gh release upload $tag out/RA-Realm-Launcher.exe out/RA-Realm-Launcher.exe.sha256 -R ${{ github.repository }} --clobber
+          path: out/RA-Realm-Launcher.exe

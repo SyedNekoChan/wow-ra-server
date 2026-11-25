@@ -1,6 +1,5 @@
 use num_bigint::BigUint;
 use rand::RngCore;
-use serde::Serialize;
 use sha1::{Digest, Sha1};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -97,27 +96,8 @@ pub fn create_account(root: &Path, user: &str, pass: &str, gm: bool) -> Result<(
     Ok(())
 }
 
-#[derive(Serialize, Clone)]
-pub struct Character {
-    pub name: String,
-    pub race: String,
-    pub class: String,
-    pub class_id: u32,
-    pub level: u32,
-    pub playtime_hours: f32,
-    pub online: bool,
-    pub achievements: u32,
-}
-
-#[derive(Serialize, Clone)]
-pub struct LoginResult {
-    pub username: String,
-    pub gm_level: u32,
-    pub characters: Vec<Character>,
-}
-
-/// Checks the password the same way the login server does and returns the account's characters.
-pub fn login(root: &Path, user: &str, pass: &str) -> Result<LoginResult, String> {
+/// Checks the password the same way the login server does. Returns the account id.
+fn verify_password(root: &Path, user: &str, pass: &str) -> Result<u32, String> {
     valid_user(user)?;
     valid_pass(pass)?;
     tables_ready(root)?;
@@ -137,77 +117,18 @@ pub fn login(root: &Path, user: &str, pass: &str) -> Result<LoginResult, String>
     if !want.eq_ignore_ascii_case(parts[2]) {
         return Err("Wrong account name or password.".into());
     }
-    let gm = sql(root, &format!("SELECT COALESCE(MAX(gmlevel),0) FROM acore_auth.account_access WHERE id={}", parts[0].trim()))?;
-    Ok(LoginResult { username: u.clone(), gm_level: gm.trim().parse().unwrap_or(0), characters: characters(root, &u)? })
+    parts[0].trim().parse().map_err(|_| "Wrong account name or password.".to_string())
 }
 
-fn race_name(id: u32) -> &'static str {
-    match id {
-        1 => "Human",
-        2 => "Orc",
-        3 => "Dwarf",
-        4 => "Night Elf",
-        5 => "Undead",
-        6 => "Tauren",
-        7 => "Gnome",
-        8 => "Troll",
-        10 => "Blood Elf",
-        11 => "Draenei",
-        _ => "Unknown",
-    }
-}
-
-fn class_name(id: u32) -> &'static str {
-    match id {
-        1 => "Warrior",
-        2 => "Paladin",
-        3 => "Hunter",
-        4 => "Rogue",
-        5 => "Priest",
-        6 => "Death Knight",
-        7 => "Shaman",
-        8 => "Mage",
-        9 => "Warlock",
-        11 => "Druid",
-        _ => "Unknown",
-    }
-}
-
-pub fn characters(root: &Path, upper_user: &str) -> Result<Vec<Character>, String> {
-    let q = format!(
-        "SELECT c.name, c.race, c.class, c.level, c.totaltime, c.online, \
-         (SELECT COUNT(*) FROM acore_characters.character_achievement a WHERE a.guid = c.guid AND a.achievement BETWEEN 60000 AND 60999) \
-         FROM acore_characters.characters c JOIN acore_auth.account acc ON acc.id = c.account \
-         WHERE acc.username = '{}' ORDER BY c.name",
-        upper_user
-    );
-    let out = sql(root, &q)?;
-    let mut list = vec![];
-    for line in out.lines() {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 7 {
-            continue;
-        }
-        let race: u32 = f[1].parse().unwrap_or(0);
-        let class: u32 = f[2].parse().unwrap_or(0);
-        list.push(Character {
-            name: f[0].to_string(),
-            race: race_name(race).to_string(),
-            class: class_name(class).to_string(),
-            class_id: class,
-            level: f[3].parse().unwrap_or(0),
-            playtime_hours: f[4].parse::<f32>().unwrap_or(0.0) / 3600.0,
-            online: f[5] == "1",
-            achievements: f[6].parse().unwrap_or(0),
-        });
-    }
-    Ok(list)
+fn character_count(root: &Path, account: u32) -> Result<u32, String> {
+    let n = sql(root, &format!("SELECT COUNT(*) FROM acore_characters.characters WHERE account = {}", account))?;
+    Ok(n.trim().parse().unwrap_or(0))
 }
 
 /// Deletes the account only when the password is right and it has no characters (so no orphan data is left behind).
 pub fn delete_account(root: &Path, user: &str, pass: &str) -> Result<(), String> {
-    let info = login(root, user, pass)?;
-    if !info.characters.is_empty() {
+    let id = verify_password(root, user, pass)?;
+    if character_count(root, id)? > 0 {
         return Err("This account still has characters. Delete them in the game first (character select screen), then delete the account.".into());
     }
     let u = user.to_ascii_uppercase();

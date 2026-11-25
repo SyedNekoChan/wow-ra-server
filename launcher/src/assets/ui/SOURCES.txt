@@ -1,0 +1,41 @@
+Emberfall launcher art
+Textures: https://github.com/Gethe/wow-ui-textures (branch "live"), Blizzard Entertainment UI textures (PNG, no BLP conversion needed).
+Processing: alpha or brightness crop; backdrop edge strips rebuilt as 3x3 nine-slice sheets (top/bottom segments rotated).
+No logos are included.
+
+file in src/assets/ui        <- original path in the repo
+parchment.webp               <- ItemTextFrame/Book.PNG (inner page, saturation 62%, brightness 112%, 1080x700)
+break.png                    <- QUESTFRAME/UI-HorizontalBreak.PNG
+stone-border.png             <- DialogFrame/UI-DialogBox-Border.PNG
+rock.webp                    <- FrameGeneral/UI-Background-Rock.PNG (512x512, brightness 80%, dialog ground)
+stone-header.png             <- DialogFrame/UI-DialogBox-Header.PNG
+big-up.png                   <- Glues/COMMON/Glue-Panel-Button-Up-v2.PNG
+big-down.png                 <- Glues/COMMON/Glue-Panel-Button-Down-v2.PNG
+big-disabled.png             <- Glues/COMMON/Glue-Panel-Button-Disable-v2.PNG
+big-highlight.png            <- Glues/COMMON/Glue-Panel-Button-Highlight.PNG
+btn-up.png                   <- Buttons/UI-Panel-Button-Up.PNG
+btn-down.png                 <- Buttons/UI-Panel-Button-Down.PNG
+btn-disabled.png             <- Buttons/UI-Panel-Button-Disabled.PNG
+btn-highlight.png            <- Buttons/UI-Panel-Button-Highlight.PNG
+close-up.png                 <- Buttons/UI-Panel-MinimizeButton-Up.PNG
+close-down.png               <- Buttons/UI-Panel-MinimizeButton-Down.PNG
+close-highlight.png          <- Buttons/UI-Panel-MinimizeButton-Highlight.PNG
+hide-up.png                  <- Buttons/UI-Panel-HideButton-Up.PNG
+hide-down.png                <- Buttons/UI-Panel-HideButton-Down.PNG
+check-up.png                 <- Buttons/UI-CheckBox-Up.PNG
+check-down.png               <- Buttons/UI-CheckBox-Down.PNG
+check-highlight.png          <- Buttons/UI-CheckBox-Highlight.PNG
+check-check.png              <- Buttons/UI-CheckBox-Check.PNG
+editbox.png                  <- Glues/COMMON/Glues-EditBox-Background.PNG
+bar-border.png               <- Glues/LoadingBar/Loading-BarBorder.PNG
+bar-fill.png                 <- TARGETINGFRAME/UI-StatusBar.PNG (tinted ember in CSS)
+bar-spark.png                <- Glues/LoadingBar/UI-LoadingBar-Spark.PNG
+indicator-green.png          <- COMMON/Indicator-Green.PNG
+indicator-gray.png           <- COMMON/Indicator-Gray.PNG
+indicator-yellow.png         <- COMMON/Indicator-Yellow.PNG
+
+hero.webp                    <- supplied by the project owner (Lich King render, sword sweeping left, on white), cut out to transparency
+                                (white flood-filled from the borders, soft edge alpha, white decontaminated). Not from the repo.
+
+Fonts: FontStyles holds images only; the bundled Cinzel and Inter (@fontsource) are used.
+Emblem: original inline SVG (components/Wow.jsx).

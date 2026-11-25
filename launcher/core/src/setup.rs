@@ -204,7 +204,7 @@ pub fn first_start_if_needed(root: &Path, emit: Emit, base: f32) -> Result<(), S
     }
     let note = |m: &str| emit(Progress::new("firststart", "Building the realm database", 0, 0, base + 5.0, m));
     note("First start: building the realm database. This takes about 5 minutes, once ...");
-    crate::server::start_realm(root, &note)?;
+    crate::server::start_realm(root, &note, false)?;
     note("Database built. Stopping the server ...");
     crate::server::stop_realm(root)?;
     if !crate::accounts::db_ready(root) {

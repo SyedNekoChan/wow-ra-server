@@ -10,22 +10,11 @@ pub struct Settings {
     pub client_dir: Option<String>,
     #[serde(default)]
     pub server_dir: Option<String>,
-    #[serde(default = "yes")]
-    pub autologin: bool,
-    #[serde(default = "eight")]
-    pub autologin_delay: u64,
-}
-
-fn yes() -> bool {
-    true
-}
-fn eight() -> u64 {
-    8
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { client_dir: None, server_dir: None, autologin: true, autologin_delay: 8 }
+        Settings { client_dir: None, server_dir: None }
     }
 }
 

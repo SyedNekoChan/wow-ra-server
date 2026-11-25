@@ -56,6 +56,24 @@ pub fn ensure_mysql(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Starts a program the same way the proven PowerShell launcher does: with its own hidden console window
+/// (Start-Process -WindowStyle Hidden). The world server needs a REAL console. When its input is redirected
+/// (for example to NUL) the AzerothCore console reader gets end-of-file and calls World::StopNow, so the realm
+/// shuts itself down right after loading (CliRunnable.cpp, Windows branch).
+fn start_hidden(exe: &Path, workdir: &Path) -> Result<(), String> {
+    let q = |p: &Path| p.display().to_string().replace('\'', "''");
+    let script = format!("Start-Process -FilePath '{}' -WorkingDirectory '{}' -WindowStyle Hidden", q(exe), q(workdir));
+    let mut c = Command::new("powershell.exe");
+    c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script]);
+    c.stdin(Stdio::null());
+    hide(&mut c);
+    let out = c.output().map_err(|x| format!("Could not start powershell.exe: {}", x))?;
+    if !out.status.success() {
+        return Err(format!("{}: {}", exe.display(), String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(())
+}
+
 fn world_log_ready(root: &Path, since: SystemTime) -> bool {
     let log = root.join("Server.log");
     let fresh = fs::metadata(&log).and_then(|m| m.modified()).map(|t| t >= since).unwrap_or(false);
@@ -68,28 +86,28 @@ fn world_log_ready(root: &Path, since: SystemTime) -> bool {
     }
 }
 
+/// How long the login server needs to notice that the realm is online: it re-reads the realm list every
+/// RealmsStateUpdateDelay seconds (default 20, authserver.conf.dist), so we wait a little longer than that.
+const REALM_LIST_WAIT_SECS: u64 = 24;
+
 /// Starts the login server and the world server hidden and waits until the world has finished loading.
-pub fn start_realm(root: &Path, note: &dyn Fn(&str)) -> Result<(), String> {
+/// With `wait_for_realm_list` it also waits until the login server will list the realm as online
+/// (use it before opening the game).
+pub fn start_realm(root: &Path, note: &dyn Fn(&str), wait_for_realm_list: bool) -> Result<(), String> {
     ensure_mysql(root)?;
     if !root.join("configs").join("worldserver.conf").exists() {
         crate::setup::prepare_config(root)?;
     }
     if !is_running("authserver.exe") {
         note("Starting the login server ...");
-        let mut c = Command::new(root.join("authserver.exe"));
-        c.current_dir(root);
-        quiet(&mut c);
-        c.spawn().map_err(|x| format!("authserver.exe: {}", x))?;
+        start_hidden(&root.join("authserver.exe"), root)?;
         std::thread::sleep(Duration::from_secs(8));
     }
     let was_running = is_running("worldserver.exe");
     let since = SystemTime::now() - Duration::from_secs(2);
     if !was_running {
         note("Starting the world server ...");
-        let mut c = Command::new(root.join("worldserver.exe"));
-        c.current_dir(root);
-        quiet(&mut c);
-        c.spawn().map_err(|x| format!("worldserver.exe: {}", x))?;
+        start_hidden(&root.join("worldserver.exe"), root)?;
     }
     note("Waiting for the world to load (the very first start takes several minutes) ...");
     let end = Instant::now() + Duration::from_secs(1500);
@@ -98,6 +116,17 @@ pub fn start_realm(root: &Path, note: &dyn Fn(&str)) -> Result<(), String> {
             return Err("The world server stopped unexpectedly. Look at Server.log and Errors.log in the server folder.".into());
         }
         if (was_running || world_log_ready(root, since)) && port_open(8085) && port_open(3724) {
+            if !was_running {
+                // it must still be up a few seconds later (a server that quits right after loading is not ready)
+                std::thread::sleep(Duration::from_secs(4));
+                if !is_running("worldserver.exe") {
+                    return Err("The world server loaded but shut down again right away. Look at Server.log and Errors.log in the server folder.".into());
+                }
+                if wait_for_realm_list {
+                    note("The realm is up. Waiting for the login server to list it as online ...");
+                    std::thread::sleep(Duration::from_secs(REALM_LIST_WAIT_SECS));
+                }
+            }
             return Ok(());
         }
         std::thread::sleep(Duration::from_secs(3));

@@ -9,7 +9,15 @@ use crate::util::e;
 use crate::{Emit, Progress};
 
 pub const REPO: &str = "SyedNekoChan/wow-ra-server";
-pub const SERVER_TAG_PREFIX: &str = "server-v";
+/// A release tag such as "v0.1.2" or "server-v0.1.0" gives "0.1.2" / "0.1.0". None when the tag has no number.
+pub fn tag_version(tag: &str) -> Option<String> {
+    let v = tag.trim().trim_start_matches(|c: char| !c.is_ascii_digit());
+    if v.is_empty() {
+        None
+    } else {
+        Some(v.to_string())
+    }
+}
 pub const PACKAGE_ASSET: &str = "wow-ra-server-package.zip";
 pub const PACKAGE_SHA_ASSET: &str = "wow-ra-server-package.zip.sha256";
 pub const MAX_TRIES: u32 = 300;
@@ -179,6 +187,9 @@ struct GhAsset {
     name: String,
     browser_download_url: String,
     size: u64,
+    /// GitHub computes this itself for every asset, e.g. "sha256:5e881b86...". Newer releases have no separate .sha256 file.
+    #[serde(default)]
+    digest: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -197,7 +208,7 @@ pub struct ServerRelease {
     pub sha256: Option<String>,
 }
 
-/// The newest published release whose tag starts with "server-v" and that carries the package zip.
+/// The newest published release (highest version number in its tag) that carries the package zip.
 pub fn latest_server_release() -> Result<Option<ServerRelease>, String> {
     let api = format!("https://api.github.com/repos/{}/releases?per_page=30", REPO);
     let rels: Vec<GhRelease> = agent()
@@ -209,22 +220,30 @@ pub fn latest_server_release() -> Result<Option<ServerRelease>, String> {
         .map_err(e)?;
     let mut best: Option<ServerRelease> = None;
     for r in rels {
-        if r.draft || r.prerelease || !r.tag_name.starts_with(SERVER_TAG_PREFIX) {
+        if r.draft || r.prerelease {
             continue;
         }
-        let version = r.tag_name[SERVER_TAG_PREFIX.len()..].to_string();
+        // Any release that carries the server package counts; its version is the number in the tag.
+        let version = match tag_version(&r.tag_name) {
+            Some(v) => v,
+            None => continue,
+        };
         let pkg = match r.assets.iter().find(|a| a.name == PACKAGE_ASSET) {
             Some(a) => a,
             None => continue,
         };
-        let sha256 = r.assets.iter().find(|a| a.name == PACKAGE_SHA_ASSET).and_then(|a| {
-            agent().get(&a.browser_download_url).call().ok().and_then(|resp| resp.into_string().ok()).and_then(|t| {
-                let h: String = t.trim().chars().take(64).collect();
-                if h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()) {
-                    Some(h.to_lowercase())
-                } else {
-                    None
-                }
+        // Preferred: the digest GitHub itself reports for the zip. Older releases: the separate .sha256 asset. Otherwise no hash check (the zip is still tested).
+        let from_digest = pkg.digest.as_deref().and_then(|d| d.strip_prefix("sha256:")).map(|h| h.trim().to_lowercase()).filter(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()));
+        let sha256 = from_digest.or_else(|| {
+            r.assets.iter().find(|a| a.name == PACKAGE_SHA_ASSET).and_then(|a| {
+                agent().get(&a.browser_download_url).call().ok().and_then(|resp| resp.into_string().ok()).and_then(|t| {
+                    let h: String = t.trim().chars().take(64).collect();
+                    if h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()) {
+                        Some(h.to_lowercase())
+                    } else {
+                        None
+                    }
+                })
             })
         });
         let cand = ServerRelease { version, url: pkg.browser_download_url.clone(), size: pkg.size, sha256 };
@@ -234,4 +253,15 @@ pub fn latest_server_release() -> Result<Option<ServerRelease>, String> {
         };
     }
     Ok(best)
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::tag_version;
+    #[test]
+    fn tags() {
+        assert_eq!(tag_version("v0.1.2").as_deref(), Some("0.1.2"));
+        assert_eq!(tag_version("server-v0.1.0").as_deref(), Some("0.1.0"));
+        assert_eq!(tag_version("latest"), None);
+    }
 }

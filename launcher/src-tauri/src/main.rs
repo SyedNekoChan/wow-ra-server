@@ -46,12 +46,6 @@ fn set_server_folder(path: String) -> Result<core::Status, String> {
 }
 
 #[tauri::command]
-fn set_autologin(on: bool) -> Result<core::Status, String> {
-    core::set_autologin(on)?;
-    Ok(core::status())
-}
-
-#[tauri::command]
 async fn check_update() -> Result<core::UpdateInfo, String> {
     blocking(|| Ok(core::check_update())).await
 }
@@ -82,16 +76,6 @@ async fn apply_update(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn login(user: String, password: String) -> Result<core::LoginResult, String> {
-    blocking(move || core::login(&user, &password)).await
-}
-
-#[tauri::command]
-async fn characters(user: String) -> Result<Vec<core::Character>, String> {
-    blocking(move || core::characters(&user)).await
-}
-
-#[tauri::command]
 async fn create_account(user: String, password: String, gm: bool) -> Result<(), String> {
     blocking(move || core::create_account(&user, &password, gm)).await
 }
@@ -102,11 +86,11 @@ async fn delete_account(user: String, password: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn play(app: tauri::AppHandle, user: String, password: String) -> Result<(), String> {
+async fn play(app: tauri::AppHandle) -> Result<(), String> {
     let guard = BusyGuard::take()?;
     blocking(move || {
         let _g = guard;
-        core::play(&user, &password, &|ev| {
+        core::play(&|ev| {
             let _ = app.emit("play", ev);
         })
     })
@@ -125,12 +109,9 @@ fn main() {
             get_status,
             set_client_folder,
             set_server_folder,
-            set_autologin,
             check_update,
             run_setup,
             apply_update,
-            login,
-            characters,
             create_account,
             delete_account,
             play,

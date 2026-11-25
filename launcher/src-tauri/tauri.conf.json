@@ -16,7 +16,11 @@
         "title": "RA Realm Launcher",
         "width": 1080,
         "height": 700,
+        "decorations": false,
         "resizable": false,
+        "maximizable": false,
+        "minimizable": true,
+        "closable": true,
         "center": true
       }
     ],
