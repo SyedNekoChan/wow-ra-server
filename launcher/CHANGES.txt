@@ -1,0 +1,18 @@
+Emberfall launcher UI - files to copy over your launcher/ folder
+
+Replace or add (paths relative to launcher/):
+  index.html                    <title> is now Emberfall
+  src/App.jsx                   new layout; logic and every api.js call unchanged
+  src/index.css                 new styles
+  src/main.jsx                  adds the Cinzel 700 font weight
+  src/components/Wow.jsx        new UI kit (buttons, bar, dialogs, emblem)
+  src/assets/ui/                new folder: 30 images + SOURCES.txt
+
+Not included, keep yours: src/api.js (unchanged), core/, src-tauri/.
+
+One manual edit in src-tauri/tauri.conf.json, window title only:
+  "title": "Emberfall"
+Do not change productName, identifier or the exe name.
+
+Requires the packages you already use: react 18, @tauri-apps/api, @tauri-apps/plugin-dialog,
+@fontsource/cinzel, @fontsource/inter, tailwindcss 4 with @tailwindcss/vite. No new dependencies.
